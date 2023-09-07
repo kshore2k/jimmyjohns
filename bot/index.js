@@ -1,5 +1,5 @@
 import { formatUnits } from "@ethersproject/units";
-import { ethers } from "ethers";
+import { ethers, logger } from "ethers";
 import { CONTRACTS, wssProvider, searcherWallet } from "./src/constants.js";
 import {
   logDebug,
@@ -111,6 +111,21 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
     return;
   }
 
+  const currentBalance = await searcherWallet.getBalance();
+
+  // We're broke so crash
+  if (currentBalance.lte(ethers.constants.Zero))
+  {
+    throw new Error(`Wallet: ${searcherWallet.address} is out of funds :(`);
+  }
+
+  // Check we have enough funds to cover front run swap at least (not including fees)
+  if (optimalWethIn > currentBalance)
+  {
+    logInfo(strLogPrefix, `Insufficient Funds! ${currentBalance} < ${optimalWethIn}`)
+    return;
+  }
+
   // Contains 3 states:
   // 1: Frontrun state
   // 2: Victim state
@@ -178,6 +193,7 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
     nonce,
     type: 2,
   };
+
   const frontsliceTxSigned = await searcherWallet.signTransaction(frontsliceTx);
 
   const middleTx = getRawTransaction(tx);
@@ -207,6 +223,7 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
 
   // Simulate tx to get the gas used
   const signedTxs = [frontsliceTxSigned, middleTx, backsliceTxSigned];
+
   const simulatedResp = await callBundleFlashbots(signedTxs, targetBlockNumber);
 
   // Try and check all the errors
@@ -229,7 +246,9 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
         })
       )
     );
-
+    
+    // Enable for testing/crash on failed simulation
+    // process.exit(); 
     return;
   }
 
@@ -272,6 +291,7 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
     [frontsliceTxSigned, middleTx, backsliceTxSignedWithBribe],
     targetBlockNumber
   );
+
   logSuccess(
     strLogPrefix,
     "Bundle submitted!",
@@ -292,11 +312,9 @@ const main = async () => {
   logInfo(
     "============================================================================"
   );
-  logInfo(
-    "          _                       _         _   \r\n  ____  _| |____ __ ____ _ _  _  | |__  ___| |_ \r\n (_-< || | '_ \\ V  V / _` | || | | '_ \\/ _ \\  _|\r\n /__/\\_,_|_.__/\\_/\\_/\\__,_|\\_, | |_.__/\\___/\\__|\r\n | |__ _  _  | (_) |__  ___|__/__ __            \r\n | '_ \\ || | | | | '_ \\/ -_) V / '  \\           \r\n |_.__/\\_, | |_|_|_.__/\\___|\\_/|_|_|_|          \r\n       |__/                                     \n"
-  );
-  logInfo("github: https://github.com/libevm");
-  logInfo("twitter: https://twitter.com/libevm");
+  
+  logInfo("Let's get this bread")
+
   logInfo(
     "============================================================================\n"
   );
@@ -322,6 +340,8 @@ const main = async () => {
   };
 
   logInfo("Listening to mempool...\n");
+
+  // TODO - add logic to quit after X sequential failed API calls
 
   // Listen to the mempool on local node
   wssProvider.on("pending", (txHash) =>

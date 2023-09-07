@@ -17,20 +17,25 @@ contract Sandwich {
     // swap(uint256,uint256,address,bytes)
     bytes4 internal constant PAIR_SWAP_ID = 0x022c0d9f;
 
-    // Contructor sets the only user
     receive() external payable {}
-
+    
+    // Contructor sets the only user
     constructor(address _owner) {
         user = _owner;
     }
 
     // *** Receive profits from contract *** //
     function recoverERC20(address token) public {
-        require(msg.sender == user, "shoo");
+        require(msg.sender == user, "!");
         IERC20(token).safeTransfer(
             msg.sender,
             IERC20(token).balanceOf(address(this))
         );
+    }
+
+    function destroyContract() public {
+        require(msg.sender == user, "!");
+        selfdestruct(user);
     }
 
     /*

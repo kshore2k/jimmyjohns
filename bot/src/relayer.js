@@ -11,6 +11,7 @@ const {
 } = require("@ethereumjs/tx");
 import { stringifyBN, toRpcHexString } from "./utils.js";
 import { authKeyWallet } from "./constants.js";
+import { logError, logInfo } from "./logging.js";
 
 let _fbId = 1;
 export const fbRequest = async (url, method, params) => {
@@ -62,18 +63,14 @@ export const sendBundleFlashbots = async (signedTxs, targetBlockNumber) => {
 export const sanityCheckSimulationResponse = (sim) => {
   // Contains first revert
   if (sim.firstRevert) {
-    throw new Error(sim.firstRevert.revert);
-  }
-
-  // Contains first revert
-  if (sim.firstRevert) {
+    logError("First Revert: ", JSON.stringify(sim.firstRevert));
     throw new Error(sim.firstRevert.revert);
   }
 
   // Simulation error type
-  const simE = sim;
-  if (simE.error) {
-    throw new Error(simE.error.message);
+  if (sim.error) {
+    logError("Simulation Error: ", JSON.stringify(sim.error.message));
+    throw new Error(sim.error.message);
   }
 
   // Another type of silent error
@@ -82,6 +79,7 @@ export const sanityCheckSimulationResponse = (sim) => {
     .filter((x) => x.error !== undefined)
     .map((x) => x.error + " " + (x.revert || ""));
   if (errors.length > 0) {
+    logError("Simulation Errors: ", errors.join(", "));
     throw new Error(errors.join(", "));
   }
 
@@ -105,6 +103,7 @@ export const callBundleFlashbots = async (signedTxs, targetBlockNumber) => {
     "eth_callBundle",
     params
   );
+
   return resp.result;
 };
 
