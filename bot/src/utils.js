@@ -68,3 +68,7 @@ export const calcNextBlockBaseFee = (curBlock) => {
   const rand = Math.floor(Math.random() * 10);
   return newBaseFee.add(rand);
 };
+
+export const weiToEth = (wei) => {
+  return wei.div(Math.pow(10/18));
+}

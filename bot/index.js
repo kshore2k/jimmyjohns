@@ -1,6 +1,6 @@
 import { formatUnits } from "@ethersproject/units";
-import { ethers, logger } from "ethers";
-import { CONTRACTS, wssProvider, searcherWallet } from "./src/constants.js";
+import { ethers } from "ethers";
+import { CONTRACTS, wssProvider, searcherWallet, provider } from "./src/constants.js";
 import {
   logDebug,
   logError,
@@ -22,7 +22,10 @@ import {
   getUniv2PairAddress,
   getUniv2Reserve,
 } from "./src/univ2.js";
-import { calcNextBlockBaseFee, match, stringifyBN } from "./src/utils.js";
+import { calcNextBlockBaseFee, match, stringifyBN, weiToEth } from "./src/utils.js";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const IErc20ABI = require("./src/abi/IErc20.json");
 
 // Note: You'll probably want to break this function up
 //       handling everything in here so you can follow along easily
@@ -93,6 +96,7 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
   // Note: Since this is swapExactETHForTokens, the path will always be like so
   // Get the optimal in amount
   const [weth, token] = path;
+
   const pairToSandwich = getUniv2PairAddress(weth, token);
   const [reserveWeth, reserveToken] = await getUniv2Reserve(
     pairToSandwich,
@@ -108,21 +112,6 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
 
   // Lmeow, nothing to sandwich!
   if (optimalWethIn.lte(ethers.constants.Zero)) {
-    return;
-  }
-
-  const currentBalance = await searcherWallet.getBalance();
-
-  // We're broke so crash
-  if (currentBalance.lte(ethers.constants.Zero))
-  {
-    throw new Error(`Wallet: ${searcherWallet.address} is out of funds :(`);
-  }
-
-  // Check we have enough funds to cover front run swap at least (not including fees)
-  if (optimalWethIn > currentBalance)
-  {
-    logInfo(strLogPrefix, `Insufficient Funds! ${currentBalance} < ${optimalWethIn}`)
     return;
   }
 
@@ -153,6 +142,23 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
         })
       )
     );
+    return;
+  }
+
+  // Get current WEth balance from our wallet
+  const tokenContract = new ethers.Contract(weth, IErc20ABI, provider);
+  const currentWethBalance = await tokenContract.balanceOf(searcherWallet.address);
+
+  // We're broke so crash
+  if (currentWethBalance.lte(ethers.constants.Zero))
+  {
+    throw new Error(`Wallet: ${searcherWallet.address} is out of funds :(`);
+  }
+
+  // Check we have enough funds to cover front run swap at least (not including fees)
+  if (optimalWethIn > currentWethBalance)
+  {
+    logInfo(strLogPrefix, `Insufficient Funds! ${currentWethBalance} < ${optimalWethIn}`)
     return;
   }
 
@@ -306,6 +312,9 @@ const sandwichUniswapV2RouterTx = async (txHash) => {
       bundleResp
     )
   );
+
+  process.exit();
+
 };
 
 const main = async () => {
@@ -345,9 +354,10 @@ const main = async () => {
 
   // Listen to the mempool on local node
   wssProvider.on("pending", (txHash) =>
-    sandwichUniswapV2RouterTx(txHash).catch((e) => {
-      logFatal(`txhash=${txHash} error ${JSON.stringify(e)}`);
-    })
+    sandwichUniswapV2RouterTx(txHash)
+      .catch((e) => {
+        logFatal(`txhash=${txHash} error ${JSON.stringify(e)}`);
+      })
   );
 };
 
